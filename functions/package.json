@@ -1,0 +1,23 @@
+{
+  "name": "el-shayeb-online-functions",
+  "version": "1.0.0",
+  "description": "Server-authoritative Cloud Functions v2 and game engine for El Shayeb Online (الشايب أونلاين)",
+  "type": "module",
+  "main": "lib/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --experimental-strip-types --test test/*.test.mjs",
+    "test:emulator": "node test/firebase_emulator_smoke.mjs",
+    "serve": "npm run build && firebase emulators:start --only functions,firestore,auth,storage"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.4.0",
+    "firebase-functions": "^6.3.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

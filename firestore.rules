@@ -1,0 +1,127 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isValidNickname(name) {
+      return name is string
+        && name.size() >= 2
+        && name.size() <= 24
+        && !name.matches('.*[<>].*')
+        && !name.matches('^(النظام|سيستم|System|Admin|أدمن|المشرف)$');
+    }
+
+    // Canonical membership check using rooms/{roomId}.data.memberIds (eliminates redundant players/{uid} subdocs)
+    function isRoomMember(roomId) {
+      return isSignedIn()
+        && request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.memberIds;
+    }
+
+    // Users Collection: /users/{uid}
+    // Clients can edit only approved profile fields; game statistics are server-controlled.
+    match /users/{uid} {
+      allow get: if isSignedIn();
+      allow list: if false;
+
+      allow create: if isOwner(uid)
+        && request.resource.data.keys().hasOnly([
+          'uid', 'nickname', 'avatarId', 'createdAt', 'updatedAt',
+          'gamesPlayed', 'roundsPlayed', 'roundsLost', 'roundsWon', 'matchesWon', 'totalPoints'
+        ])
+        && request.resource.data.uid == uid
+        && isValidNickname(request.resource.data.nickname)
+        && request.resource.data.avatarId is string
+        && request.resource.data.avatarId.size() >= 1
+        && request.resource.data.avatarId.size() <= 32
+        && request.resource.data.gamesPlayed == 0
+        && request.resource.data.roundsPlayed == 0
+        && request.resource.data.roundsLost == 0
+        && request.resource.data.roundsWon == 0
+        && request.resource.data.matchesWon == 0
+        && request.resource.data.totalPoints == 0;
+
+      allow update: if isOwner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname', 'avatarId', 'updatedAt'])
+        && isValidNickname(request.resource.data.nickname)
+        && request.resource.data.avatarId is string
+        && request.resource.data.avatarId.size() >= 1
+        && request.resource.data.avatarId.size() <= 32;
+
+      allow delete: if false;
+    }
+
+    // Public Rooms Directory: /publicRooms/{roomId}
+    match /publicRooms/{roomId} {
+      allow get, list: if isSignedIn();
+      allow write: if false;
+    }
+
+    // Room Codes Mapping: /roomCodes/{code}
+    match /roomCodes/{code} {
+      allow read, write: if false;
+    }
+
+    // Global Challenges Library: /challenges/{challengeId}
+    match /challenges/{challengeId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // Rooms Collection: /rooms/{roomId}
+    // Private rooms are not globally discoverable (`allow list: if false`).
+    match /rooms/{roomId} {
+      allow get: if isSignedIn() && request.auth.uid in resource.data.memberIds;
+      allow list: if false;
+      allow write: if false;
+
+      // Private Hands subcollection: /rooms/{roomId}/hands/{playerUid}
+      // CRITICAL ANTI-CHEAT RULE: Owner-only get, never list, never write.
+      match /hands/{playerUid} {
+        allow get: if isOwner(playerUid) && isRoomMember(roomId);
+        allow list, write: if false;
+      }
+
+      // Canonical Public Round State: /rooms/{roomId}/state/current
+      match /state/{stateId} {
+        allow read: if stateId == 'current' && isRoomMember(roomId);
+        allow write: if false;
+      }
+
+      // Secret authoritative deck & hands: strictly inaccessible to all clients
+      match /secret/{id} {
+        allow read, write: if false;
+      }
+
+      // Idempotent action logs: strictly server-only
+      match /actions/{id} {
+        allow read, write: if false;
+      }
+
+      // Assigned Challenges history: /rooms/{roomId}/challenges/{challengeInstanceId}
+      match /challenges/{challengeInstanceId} {
+        allow read: if isRoomMember(roomId);
+        allow write: if false;
+      }
+
+      // Chat is server-write-only: the callable validates identity, text,
+      // rate limits, and sender labels. Client bypasses must be impossible.
+      match /messages/{messageId} {
+        allow get, list: if isRoomMember(roomId);
+        allow create, update, delete: if false;
+      }
+
+      // Per-player chat throttling state is strictly server-private.
+      match /chatRate/{playerUid} {
+        allow read, write: if false;
+      }
+    }
+  }
+}

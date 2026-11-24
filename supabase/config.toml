@@ -1,0 +1,14 @@
+project_id = "lzmpwjfgrtlypticedic"
+
+[auth]
+site_url = "http://localhost:3000"
+enable_signup = true
+enable_anonymous_sign_ins = true
+
+[functions.game]
+verify_jwt = true
+
+# media verifies user JWTs inside the handler for getUploadUrl/attachMedia/getDownloadUrl,
+# and authenticates cleanupExpired cron calls via x-cron-secret (CLEANUP_CRON_SECRET).
+[functions.media]
+verify_jwt = false
